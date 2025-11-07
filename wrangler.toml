@@ -2,8 +2,10 @@ name = "sea-game-app"
 compatibility_date = "2024-08-15"
 pages_build_output_dir = "dist"
 
+[build]
+command = "npm run build"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "sea-game-app"
-# TODO: החלף במזהה ה-D1 שלך לאחר ההקמה
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "a44b58d9-dd5c-4a37-b132-7bb1993abc67"

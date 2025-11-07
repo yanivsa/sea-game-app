@@ -10,6 +10,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: #01040c;
+  direction: rtl;
 }
 
 button {

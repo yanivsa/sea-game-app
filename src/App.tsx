@@ -6,6 +6,9 @@ import type { LeaderboardRecord } from './game/types'
 import { useGameEngine } from './hooks/useGameEngine'
 import { fetchLeaderboard, submitScore } from './services/leaderboard'
 import { useGameAudio } from './audio/useGameAudio'
+import { MiniMap } from './components/MiniMap'
+import { TrackerHUD } from './components/TrackerHUD'
+import { clamp, distance } from './game/utils'
 
 const formatClock = (ms: number) => {
   const safeMs = Math.max(0, Math.floor(ms))
@@ -20,12 +23,12 @@ const formatDuration = (ms: number) => {
 }
 
 const keyLegend = [
-  { hotkey: '⬆⬇⬅➡', label: 'תנועה על החוף' },
-  { hotkey: 'Space', label: 'מכת נוקאאוט' },
-  { hotkey: 'F', label: 'סריקה מתחת לחול' },
-  { hotkey: 'V', label: 'מצב צלילה' },
-  { hotkey: 'G', label: 'פינג גלאי' },
-  { hotkey: 'Enter', label: 'מסירת האייפון למשטרה' },
+  { hotkey: '⬆⬇⬅➡', label: 'תנועה קדימה ואחורה' },
+  { hotkey: 'רווח', label: 'מכת הרתעה' },
+  { hotkey: 'F', label: 'סריקה ממוקדת בחול' },
+  { hotkey: 'V', label: 'כניסה/יציאה מצלילה' },
+  { hotkey: 'G', label: 'פינג כיוון' },
+  { hotkey: 'Enter', label: 'מסירה בתחנת המשטרה' },
 ]
 
 function App() {
@@ -83,6 +86,34 @@ function App() {
   const daysWindow = DEVICE_UNLOCK_DAY
   const progressRatio = 1 - state.clockMs / GAME_DURATION_MS
   const dayProgress = (progressRatio * MAX_DAYS).toFixed(1)
+  const phoneTelemetry = useMemo(() => {
+    const deviceX = state.device.position.x
+    const deviceY = state.device.position.y
+    const playerX = state.player.position.x
+    const playerY = state.player.position.y
+    const dx = deviceX - playerX
+    const dy = deviceY - playerY
+    const dist = distance(state.device.position, state.player.position)
+    const worldBearing = (Math.atan2(dy, dx) * 180) / Math.PI
+    const playerHeading = (state.player.heading * 180) / Math.PI
+    const relativeBearing = ((worldBearing - playerHeading + 540) % 360) - 180
+    const signalBase = state.device.located
+      ? 1 - clamp(dist / 320, 0, 1)
+      : clamp((DEVICE_UNLOCK_DAY - state.dayIndex + 4) / Math.max(dist / 90, 8), 0.05, 0.55)
+    return {
+      dist,
+      bearing: relativeBearing,
+      signal: clamp(signalBase, 0, 1),
+    }
+  }, [
+    state.device.position.x,
+    state.device.position.y,
+    state.player.position.x,
+    state.player.position.y,
+    state.player.heading,
+    state.device.located,
+    state.dayIndex,
+  ])
   const actionBars = useMemo(
     () => [
       { label: 'סטמינה', value: state.player.stamina, color: '#ffb347' },
@@ -102,7 +133,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" dir="rtl">
       <header className="key-row">
         {keyLegend.map((entry) => (
           <span key={entry.hotkey}>
@@ -157,7 +188,7 @@ function App() {
           </div>
 
           <div className="records-panel">
-            <h2>שיאי Fast Finder</h2>
+            <h2>לוח שיאי חילוץ</h2>
             {bestRecord ? (
               <p className="best-line">
                 {bestRecord.username} • {formatDuration(bestRecord.durationMs)} • {bestRecord.dayCount} ימים
@@ -175,10 +206,45 @@ function App() {
               ))}
             </ol>
           </div>
+
+          <MiniMap state={state} />
+
+          <div className="world-brief">
+            <h2>תדריך שטח</h2>
+            <dl>
+              <div>
+                <dt>אנשי חליפות יבשתיים</dt>
+                <dd>מסיירים על החול היבש, נצמדים למטרה. פגיעה ברווח עוצרת אותם למספר שניות.</dd>
+              </div>
+              <div>
+                <dt>אנשי חליפות ימיים</dt>
+                <dd>מגיחים מתוך הגלים. צלילה קצרה ויציאה מהירה משבשים את נעילתם.</dd>
+              </div>
+              <div>
+                <dt>טלפון iPhone 16</dt>
+                <dd>קבור באזור החוף הרטוב או מעל ריף רדוד. האזנה לפינגים תכוון אותך בדיוק.</dd>
+              </div>
+              <div>
+                <dt>תוואי החוף</dt>
+                <dd>דיונות, סלעי בזלת, דגלי אזהרה ומצופים. ניתן להשתמש בהם לכיסוי ולסימון כיוון.</dd>
+              </div>
+            </dl>
+          </div>
         </section>
 
         <section className="game-panel">
-          <GameCanvas state={state} />
+          <div className="canvas-wrapper">
+            <GameCanvas state={state} />
+            <TrackerHUD
+              distance={phoneTelemetry.dist}
+              bearingDeg={phoneTelemetry.bearing}
+              located={state.device.located}
+              retrieved={state.device.retrieved}
+              signal={state.device.retrieved ? 1 : phoneTelemetry.signal}
+              threat={state.threatLevel}
+              tide={state.tideLevel}
+            />
+          </div>
         </section>
       </main>
 
@@ -187,15 +253,13 @@ function App() {
           <div className="overlay-card">
             <h2>משימת חוף הצוק</h2>
             <p>
-              מצא את האייפון 16 שאבד בחוף הצוק והעבר אותו לתחנת המשטרה בתוך 15
-              דקות (15 ימים בעולם המשחק). אנשי חליפות עם משקפי שמש יעשו הכול כדי
-              לעצור אותך ביבשה ובים.
+              מצא את האייפון 16 שאבד בחוף הצוק והעבר אותו לתחנת המשטרה בתוך 15 דקות (15 ימים בעולם המשחק). אנשי חליפות עם משקפי שמש יעשו הכול כדי לעצור אותך ביבשה ובים.
             </p>
             <ul className="mission-points">
-              <li>סרוק את החול בעזרת הסורק (F) ברגע שהאיתות חזק.</li>
-              <li>צלול (V) כאשר אתה בים כדי לבדוק את המים העמוקים.</li>
-              <li>הדף אנשי חליפות עם מקש הרווח והישמר מהסחות.</li>
-              <li>חלון מציאה מהיר: 4 ימים ראשונים. פעל מהר!</li>
+              <li>סריקה (F) יעילה יותר על החוף הרטוב, במיוחד בארבעת הימים הראשונים.</li>
+              <li>צלילה (V) מגלה מצופים חשודים ומאפשרת להתחמק מהפרעות מתחת למים.</li>
+              <li>מכת הרתעה (רווח) פותחת חלון בריחה קצר – אל תיתקע בתוך קבוצה.</li>
+              <li>מסירת המכשיר (Enter) אפשרית רק בתוך מעגל תחנת המשטרה בצפון המפה.</li>
             </ul>
             <input
               placeholder="הקלד שם לוחם / שם משתמש"

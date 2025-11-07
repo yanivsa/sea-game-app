@@ -43,6 +43,9 @@ export interface PlayerState {
   name: string
   position: Vector2
   velocity: Vector2
+  heading: number
+  bobPhase: number
+  sway: number
   stamina: number
   focus: number
   integrity: number
@@ -52,6 +55,16 @@ export interface PlayerState {
   strikeCooldown: number
   gadgetCharge: number
   carryingDevice: boolean
+}
+
+export type StructureKind = 'rock' | 'lifeguard' | 'flag' | 'buoy' | 'driftwood'
+
+export interface Structure {
+  id: number
+  kind: StructureKind
+  position: Vector2
+  size: number
+  height: number
 }
 
 export interface ActionFlags {
@@ -78,6 +91,7 @@ export interface GameState {
   tideLevel: number
   threatLevel: number
   lastTimestamp: number
+  structures: Structure[]
   reason?: string
   scoreMs?: number
   leaderboard: LeaderboardRecord[]

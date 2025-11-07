@@ -27,11 +27,13 @@ import type {
   InputSnapshot,
   PlayerState,
   PulsePing,
+  Structure,
+  StructureKind,
   SuitAgent,
   Vector2,
   ZoneType,
 } from './types'
-import { clamp, distance, normalize, pick, randomRange } from './utils'
+import { clamp, distance, lerp, normalize, pick, randomRange } from './utils'
 
 const nowTime = () =>
   typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -39,6 +41,7 @@ const nowTime = () =>
 let suitId = 0
 let pulseId = 0
 let intelId = 0
+let structureId = 0
 
 const zoneForY = (y: number): ZoneType => {
   if (y <= CLIFF_LINE) return 'cliff'
@@ -114,6 +117,69 @@ const clonePlayer = (player: PlayerState): PlayerState => ({ ...player })
 
 const cloneSuit = (suit: SuitAgent): SuitAgent => ({ ...suit })
 
+const structureDefinitions: {
+  kind: StructureKind
+  count: number
+  zone: { xMin: number; xMax: number; yMin: number; yMax: number }
+  size: [number, number]
+  height: [number, number]
+}[] = [
+  {
+    kind: 'rock',
+    count: 6,
+    zone: { xMin: 80, xMax: MAP_WIDTH - 80, yMin: CLIFF_LINE + 40, yMax: WATER_LINE + 30 },
+    size: [18, 36],
+    height: [30, 60],
+  },
+  {
+    kind: 'lifeguard',
+    count: 2,
+    zone: { xMin: 120, xMax: MAP_WIDTH - 120, yMin: CLIFF_LINE + 10, yMax: CLIFF_LINE + 80 },
+    size: [38, 44],
+    height: [90, 110],
+  },
+  {
+    kind: 'flag',
+    count: 3,
+    zone: { xMin: 120, xMax: MAP_WIDTH - 120, yMin: WATER_LINE - 40, yMax: WATER_LINE + 40 },
+    size: [8, 12],
+    height: [120, 160],
+  },
+  {
+    kind: 'buoy',
+    count: 4,
+    zone: { xMin: 160, xMax: MAP_WIDTH - 160, yMin: WATER_LINE + 20, yMax: MAP_HEIGHT - 60 },
+    size: [10, 14],
+    height: [30, 45],
+  },
+  {
+    kind: 'driftwood',
+    count: 4,
+    zone: { xMin: 60, xMax: MAP_WIDTH - 60, yMin: WATER_LINE - 50, yMax: WATER_LINE + 70 },
+    size: [28, 60],
+    height: [10, 20],
+  },
+]
+
+const generateStructures = (): Structure[] => {
+  const structures: Structure[] = []
+  structureDefinitions.forEach((def) => {
+    for (let i = 0; i < def.count; i += 1) {
+      structures.push({
+        id: ++structureId,
+        kind: def.kind,
+        position: {
+          x: randomRange(def.zone.xMin, def.zone.xMax),
+          y: randomRange(def.zone.yMin, def.zone.yMax),
+        },
+        size: randomRange(...def.size),
+        height: randomRange(...def.height),
+      })
+    }
+  })
+  return structures
+}
+
 export const createInitialState = (
   handle: string,
   now = nowTime(),
@@ -123,6 +189,9 @@ export const createInitialState = (
     name: profileHandle,
     position: { x: 140, y: WATER_LINE - 40 },
     velocity: { x: 0, y: 0 },
+    heading: 0,
+    bobPhase: 0,
+    sway: 0,
     stamina: 100,
     focus: 100,
     integrity: 100,
@@ -150,6 +219,7 @@ export const createInitialState = (
     tideLevel: 0.5,
     threatLevel: 0.1,
     lastTimestamp: now,
+    structures: generateStructures(),
     leaderboard: [],
   }
 }
@@ -228,7 +298,14 @@ const advancePlayer = (
     x: next.position.x + direction.x * speed * deltaMs,
     y: next.position.y + direction.y * speed * deltaMs,
   })
-  next.velocity = { x: direction.x * speed, y: direction.y * speed }
+  const smoothing = Math.min(1, deltaMs * 0.012)
+  next.velocity = {
+    x: lerp(next.velocity.x, direction.x * speed, smoothing),
+    y: lerp(next.velocity.y, direction.y * speed, smoothing),
+  }
+  if (isTryingToMove) {
+    next.heading = Math.atan2(direction.y, direction.x)
+  }
   next.inWater = zoneForY(next.position.y) === 'water'
 
   const staminaDelta =
@@ -244,6 +321,18 @@ const advancePlayer = (
     0,
     100,
   )
+
+  const motionEnergy = clamp(
+    Math.hypot(next.velocity.x, next.velocity.y) / (PLAYER_SPEED * 2),
+    0,
+    2,
+  )
+  if (motionEnergy > 0.02) {
+    next.bobPhase = (next.bobPhase + deltaMs * 0.004 * (input.sprint ? 1.7 : 1)) % (Math.PI * 2)
+  } else {
+    next.bobPhase = lerp(next.bobPhase, 0, 0.05)
+  }
+  next.sway = Math.sin(next.bobPhase) * (next.inWater ? 6 : 10) * (input.sprint ? 1.2 : 1)
 
   return next
 }
