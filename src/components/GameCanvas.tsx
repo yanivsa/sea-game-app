@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { MAP_HEIGHT, MAP_WIDTH } from '../game/constants'
 import type { GameState, Vector2 } from '../game/types'
 import { clamp } from '../game/utils'
+import { getCliffPattern, getSandPattern, getSuitHighlight, getWaterPattern } from '../game/art'
 
 const HORIZON = 140
 
@@ -49,8 +50,8 @@ const drawBackground = (ctx: CanvasRenderingContext2D, state: GameState) => {
   ctx.arc(sunX, sunY, 80, 0, Math.PI * 2)
   ctx.fill()
 
-  // Dunes
-  ctx.fillStyle = '#3a250f'
+  // Dunes (cliff texture)
+  ctx.fillStyle = getCliffPattern(ctx) ?? '#3a250f'
   ctx.beginPath()
   ctx.moveTo(0, HORIZON + 30)
   ctx.quadraticCurveTo(MAP_WIDTH * 0.25, HORIZON + 10, MAP_WIDTH * 0.55, HORIZON + 40)
@@ -63,8 +64,16 @@ const drawBackground = (ctx: CanvasRenderingContext2D, state: GameState) => {
   const sandGradient = ctx.createLinearGradient(0, HORIZON + 40, 0, MAP_HEIGHT)
   sandGradient.addColorStop(0, 'rgba(204, 165, 96, 0.9)')
   sandGradient.addColorStop(1, 'rgba(122, 82, 32, 1)')
-  ctx.fillStyle = sandGradient
+  const sandPattern = getSandPattern(ctx)
+  ctx.fillStyle = sandPattern ?? sandGradient
   ctx.fillRect(0, HORIZON + 40, MAP_WIDTH, MAP_HEIGHT - (HORIZON + 40))
+
+  const baseWater = ctx.createLinearGradient(0, HORIZON + 60, 0, MAP_HEIGHT)
+  baseWater.addColorStop(0, `rgba(20, 77, 125, ${0.85 + state.tideLevel * 0.2})`)
+  baseWater.addColorStop(1, 'rgba(3, 18, 41, 1)')
+  const waterPattern = getWaterPattern(ctx)
+  ctx.fillStyle = waterPattern ?? baseWater
+  ctx.fillRect(0, HORIZON + 60, MAP_WIDTH, MAP_HEIGHT - (HORIZON + 60))
 
   // Ocean waves
   ctx.save()
@@ -283,14 +292,34 @@ const drawSuit = (
   const width = 32 * projected.scale
   ctx.save()
   ctx.translate(projected.x, projected.y)
-  ctx.fillStyle = tone
+  const torsoGradient = ctx.createLinearGradient(0, -height, 0, 0)
+  torsoGradient.addColorStop(0, stunned ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.4)')
+  torsoGradient.addColorStop(1, tone)
+  ctx.fillStyle = torsoGradient
   ctx.fillRect(-width / 2, -height, width, height)
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'
-  ctx.fillRect(-width / 2, -height, width, height * 0.25)
+
+  // Pattern highlight
+  const pattern = getSuitHighlight(ctx)
+  if (pattern) {
+    ctx.globalAlpha = 0.25
+    ctx.fillStyle = pattern
+    ctx.fillRect(-width / 2, -height, width, height)
+    ctx.globalAlpha = 1
+  }
+
+  // Mask sunglasses
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'
+  ctx.fillRect(-width * 0.35, -height * 0.85, width * 0.7, height * 0.1)
+
+  // Arms
+  ctx.lineWidth = width * 0.18
+  ctx.strokeStyle = tone
   ctx.beginPath()
-  ctx.fillStyle = 'rgba(255,255,255,0.1)'
-  ctx.arc(0, -height, width * 0.45, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.moveTo(-width * 0.6, -height * 0.5)
+  ctx.lineTo(-width, -height * 0.1)
+  ctx.moveTo(width * 0.6, -height * 0.5)
+  ctx.lineTo(width, -height * 0.1)
+  ctx.stroke()
   ctx.restore()
 }
 

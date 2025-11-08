@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
-import { GameCanvas } from './components/GameCanvas'
+import { World3D } from './components/World3D'
 import { GAME_DURATION_MS, MAX_DAYS, DEVICE_UNLOCK_DAY } from './game/constants'
 import type { LeaderboardRecord } from './game/types'
 import { useGameEngine } from './hooks/useGameEngine'
@@ -234,7 +234,7 @@ function App() {
 
         <section className="game-panel">
           <div className="canvas-wrapper">
-            <GameCanvas state={state} />
+            <World3D state={state} />
             <TrackerHUD
               distance={phoneTelemetry.dist}
               bearingDeg={phoneTelemetry.bearing}
