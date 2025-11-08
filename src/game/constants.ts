@@ -11,6 +11,7 @@ export const PLAYER_SWIM_SPEED = 0.18
 export const PLAYER_DIVE_SPEED = 0.15
 export const PLAYER_SPRINT_MULTIPLIER = 1.35
 export const PLAYER_STAMINA_DRAIN = 0.002
+export const PLAYER_TURN_SPEED = 0.0035
 
 export const SUIT_BASE_SPEED = 0.05
 export const SUIT_MAX_SPEED = 0.12

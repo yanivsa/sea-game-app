@@ -5,7 +5,6 @@ import { MAP_HEIGHT, MAP_WIDTH, WATER_LINE, CLIFF_LINE } from '../game/constants
 import { createWaterMaterial } from '../shaders/water'
 
 const SCALE = 0.05 // world units per pixel (scene meters per map pixel)
-const PLAYER_EYE_HEIGHT = 1.64
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
@@ -324,7 +323,7 @@ export const World3D = ({ state }: { state: GameState }) => {
       const bob = Math.sin(snapshot.player.bobPhase) * 0.05
 
       if (playerRigRef.current) {
-        playerRigRef.current.position.lerp(new THREE.Vector3(px, 0, pz), 0.3)
+        playerRigRef.current.position.lerp(new THREE.Vector3(px, 0, pz), 0.25)
         playerRigRef.current.rotation.y = Math.atan2(dirX, dirZ)
         const arrowMesh = playerRigRef.current.getObjectByName('playerArrow') as THREE.Mesh | null
         if (arrowMesh) {
@@ -332,13 +331,13 @@ export const World3D = ({ state }: { state: GameState }) => {
         }
       }
 
-      const camTarget = new THREE.Vector3(px, 0.6 + bob, pz)
+      const camTarget = new THREE.Vector3(px, 1.2 + bob * 0.5, pz)
       const camPos = new THREE.Vector3(
-        px - dirX * 3.2 + Math.sin(t * 0.4) * 0.1,
-        PLAYER_EYE_HEIGHT + 0.4 - bob,
-        pz - dirZ * 3.2 + Math.cos(t * 0.4) * 0.1,
+        px - dirX * 6.0 + dirZ * 1.5,
+        4.0 - bob * 0.5,
+        pz - dirZ * 6.0 - dirX * 1.5,
       )
-      camera.position.lerp(camPos, 0.12)
+      camera.position.lerp(camPos, 0.1)
       camera.lookAt(camTarget)
 
       ;(water.material as THREE.ShaderMaterial).uniforms.uTime.value = t

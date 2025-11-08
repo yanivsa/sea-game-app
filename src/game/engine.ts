@@ -12,6 +12,7 @@ import {
   PLAYER_SPRINT_MULTIPLIER,
   PLAYER_STAMINA_DRAIN,
   PLAYER_SWIM_SPEED,
+  PLAYER_TURN_SPEED,
   POLICE_ZONE,
   STRIKE_RADIUS,
   SUIT_BASE_SPEED,
@@ -262,13 +263,10 @@ export const snapshotInputs = (pressed: Set<string>): InputSnapshot => {
   }
 }
 
-const resolveMovementVector = (input: InputSnapshot): Vector2 => {
-  const dir = { x: 0, y: 0 }
-  if (input.forward) dir.y -= 1
-  if (input.backward) dir.y += 1
-  if (input.left) dir.x -= 1
-  if (input.right) dir.x += 1
-  return dir
+const resolveMovementVector = (input: InputSnapshot) => {
+  const forward = (input.forward ? 1 : 0) + (input.backward ? -1 : 0)
+  const turn = (input.right ? 1 : 0) + (input.left ? -1 : 0)
+  return { forward, turn }
 }
 
 const resolveSpeed = (player: PlayerState, zone: ZoneType, sprint: boolean) => {
@@ -289,29 +287,33 @@ const advancePlayer = (
   const next = clonePlayer(prev)
   const movement = resolveMovementVector(input)
   const zone = zoneForY(next.position.y)
-  const isTryingToMove = movement.x !== 0 || movement.y !== 0
-
-  const direction = isTryingToMove
-    ? normalize(movement)
-    : { x: 0, y: 0 }
   const speed = resolveSpeed(next, zone, input.sprint)
 
+  if (movement.turn !== 0) {
+    next.heading += movement.turn * PLAYER_TURN_SPEED * deltaMs
+  }
+  const headingVec = {
+    x: Math.cos(next.heading),
+    y: Math.sin(next.heading),
+  }
+
   next.position = capPlayerBounds({
-    x: next.position.x + direction.x * speed * deltaMs,
-    y: next.position.y + direction.y * speed * deltaMs,
+    x: next.position.x + headingVec.x * movement.forward * speed * deltaMs,
+    y: next.position.y + headingVec.y * movement.forward * speed * deltaMs,
   })
   const smoothing = Math.min(1, deltaMs * 0.012)
-  next.velocity = {
-    x: lerp(next.velocity.x, direction.x * speed, smoothing),
-    y: lerp(next.velocity.y, direction.y * speed, smoothing),
+  const targetVelocity = {
+    x: headingVec.x * movement.forward * speed,
+    y: headingVec.y * movement.forward * speed,
   }
-  if (isTryingToMove) {
-    next.heading = Math.atan2(direction.y, direction.x)
+  next.velocity = {
+    x: lerp(next.velocity.x, targetVelocity.x, smoothing),
+    y: lerp(next.velocity.y, targetVelocity.y, smoothing),
   }
   next.inWater = zoneForY(next.position.y) === 'water'
 
   const staminaDelta =
-    input.sprint && isTryingToMove && !next.diving
+    input.sprint && movement.forward !== 0 && !next.diving
       ? -PLAYER_STAMINA_DRAIN * deltaMs
       : PLAYER_STAMINA_DRAIN * 0.6 * deltaMs
   next.stamina = clamp(next.stamina + staminaDelta, 0, 100)
