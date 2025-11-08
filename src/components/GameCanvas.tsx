@@ -87,6 +87,117 @@ const drawBackground = (ctx: CanvasRenderingContext2D, state: GameState) => {
   ctx.restore()
 }
 
+const drawClouds = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  ctx.save()
+  const time = state.lastTimestamp * 0.00003
+  for (let i = 0; i < 5; i += 1) {
+    const baseX = ((i * 220 + time * 200) % (MAP_WIDTH + 240)) - 120
+    const baseY = 40 + i * 12
+    ctx.fillStyle = `rgba(255,255,255,${0.15 + i * 0.05})`
+    ctx.beginPath()
+    ctx.ellipse(baseX, baseY, 80, 24, 0, 0, Math.PI * 2)
+    ctx.ellipse(baseX + 50, baseY + 4, 60, 18, 0, 0, Math.PI * 2)
+    ctx.ellipse(baseX - 40, baseY + 6, 50, 16, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+const drawGulls = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  ctx.save()
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'
+  ctx.lineWidth = 1.2
+  const flap = Math.sin(state.lastTimestamp * 0.002) * 6
+  for (let i = 0; i < 3; i += 1) {
+    const x = (state.lastTimestamp * 0.02 + i * 260) % (MAP_WIDTH + 120) - 60
+    const y = 70 + i * 25
+    ctx.beginPath()
+    ctx.moveTo(x - 20, y + flap)
+    ctx.quadraticCurveTo(x, y - 10 - flap, x + 20, y + flap)
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+const drawFoam = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  ctx.save()
+  const band = HORIZON + 120
+  for (let i = 0; i < 120; i += 1) {
+    const x = (i * 16 + state.lastTimestamp * 0.12) % (MAP_WIDTH + 40) - 20
+    const y = band + Math.sin((x + state.lastTimestamp * 0.2) * 0.05) * 6
+    const alpha = 0.3 + Math.sin((x + state.lastTimestamp * 0.05) * 0.15) * 0.1
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`
+    ctx.beginPath()
+    ctx.ellipse(x, y, 12, 4, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+const drawHeatHaze = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  ctx.save()
+  const shimmer = 6 + Math.sin(state.lastTimestamp * 0.003) * 2
+  for (let i = 0; i < 5; i += 1) {
+    const grad = ctx.createLinearGradient(0, HORIZON + 60 + i * 40, 0, HORIZON + 90 + i * 40)
+    grad.addColorStop(0, 'rgba(255,255,255,0)')
+    grad.addColorStop(0.5, `rgba(255,255,255,${0.05 + i * 0.02})`)
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, HORIZON + 60 + i * 40, MAP_WIDTH, shimmer)
+  }
+  ctx.restore()
+}
+
+const drawSunGlare = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  ctx.save()
+  const dayProgress =
+    (state.totalDurationMs - state.clockMs) / state.totalDurationMs
+  const glare = ctx.createRadialGradient(
+    MAP_WIDTH * 0.3,
+    40,
+    10,
+    MAP_WIDTH * 0.3,
+    40,
+    240,
+  )
+  glare.addColorStop(0, 'rgba(255, 247, 204, 0.25)')
+  glare.addColorStop(1, 'rgba(255, 247, 204, 0)')
+  ctx.globalAlpha = 0.3 + Math.sin(dayProgress * Math.PI * 2) * 0.2
+  ctx.fillStyle = glare
+  ctx.fillRect(0, 0, MAP_WIDTH, HORIZON + 80)
+  ctx.restore()
+}
+
+const drawSeaSpray = (ctx: CanvasRenderingContext2D, state: GameState) => {
+  ctx.save()
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'
+  for (let i = 0; i < 60; i += 1) {
+    const x = (i * 30 + state.lastTimestamp * 0.4) % (MAP_WIDTH + 60) - 30
+    const y = HORIZON + 120 + Math.sin((state.lastTimestamp + i * 120) * 0.01) * 10
+    ctx.beginPath()
+    ctx.arc(x, y, Math.random() * 2 + 1, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
+const drawPlayerShadow = (ctx: CanvasRenderingContext2D, sway: number) => {
+  ctx.save()
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'
+  ctx.beginPath()
+  ctx.ellipse(
+    MAP_WIDTH / 2 + sway * 0.4,
+    MAP_HEIGHT - 50,
+    90,
+    22,
+    0,
+    0,
+    Math.PI * 2,
+  )
+  ctx.fill()
+  ctx.restore()
+}
+
 const drawHands = (ctx: CanvasRenderingContext2D, carrying: boolean, sway: number) => {
   ctx.save()
   ctx.fillStyle = carrying ? 'rgba(34, 211, 115, 0.8)' : 'rgba(255, 204, 102, 0.8)'
@@ -298,6 +409,9 @@ export const GameCanvas = ({ state }: { state: GameState }) => {
     ctx.clearRect(0, 0, MAP_WIDTH, MAP_HEIGHT)
 
     drawBackground(ctx, state)
+    drawClouds(ctx, state)
+    drawGulls(ctx, state)
+    drawSunGlare(ctx, state)
     drawPulseEchoes(ctx, state)
     drawPoliceMarker(ctx, state)
 
@@ -320,6 +434,10 @@ export const GameCanvas = ({ state }: { state: GameState }) => {
       )
     })
 
+    drawFoam(ctx, state)
+    drawSeaSpray(ctx, state)
+    drawHeatHaze(ctx, state)
+    drawPlayerShadow(ctx, state.player.sway)
     drawHands(ctx, state.player.carryingDevice, state.player.sway)
     drawReticle(ctx)
   }, [state])
