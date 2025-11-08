@@ -22,6 +22,8 @@ const formatDuration = (ms: number) => {
   return `${minutes} דק׳`
 }
 
+const BUILD_VERSION = 'v0.6.0'
+
 const keyLegend = [
   { hotkey: '⬆⬇⬅➡', label: 'תנועה קדימה ואחורה' },
   { hotkey: 'רווח', label: 'מכת הרתעה' },
@@ -134,6 +136,7 @@ function App() {
 
   return (
     <div className="app-shell" dir="rtl">
+      <div className="build-badge">{BUILD_VERSION}</div>
       <header className="key-row">
         {keyLegend.map((entry) => (
           <span key={entry.hotkey}>

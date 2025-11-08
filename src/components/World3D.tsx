@@ -170,34 +170,40 @@ export const World3D = ({ state }: { state: GameState }) => {
     scene.add(station)
     policeRef.current = police
 
-    // Player rig (visible near camera)
+    // Player rig (visible in world)
     const playerRig = new THREE.Group()
     const board = new THREE.Mesh(
-      new THREE.BoxGeometry(0.45, 0.05, 0.9),
-      new THREE.MeshStandardMaterial({ color: 0x122b43, roughness: 0.35, metalness: 0.25 }),
+      new THREE.BoxGeometry(0.6, 0.08, 1.4),
+      new THREE.MeshStandardMaterial({ color: 0x0f365c, roughness: 0.25, metalness: 0.35 }),
     )
-    board.position.set(0, -0.25, -0.45)
+    board.position.y = 0.08
     playerRig.add(board)
 
-    const handMaterial = new THREE.MeshStandardMaterial({ color: 0xfac090, roughness: 0.6 })
-    const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.18), handMaterial)
-    leftHand.position.set(-0.25, -0.15, -0.2)
-    playerRig.add(leftHand)
-    const rightHand = leftHand.clone()
-    rightHand.position.x = 0.25
-    playerRig.add(rightHand)
+    const body = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.2, 0.8, 8, 16),
+      new THREE.MeshStandardMaterial({ color: 0xfcbf9e, roughness: 0.6 }),
+    )
+    body.position.y = 0.7
+    playerRig.add(body)
+
+    const paddle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05, 0.05, 1),
+      new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 }),
+    )
+    paddle.position.set(0.35, 0.4, 0)
+    paddle.rotation.y = Math.PI / 5
+    playerRig.add(paddle)
 
     const arrow = new THREE.Mesh(
-      new THREE.ConeGeometry(0.08, 0.45, 16),
-      new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xf2c744, emissiveIntensity: 0.6 }),
+      new THREE.ConeGeometry(0.12, 0.5, 16),
+      new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xf2c744, emissiveIntensity: 0.8 }),
     )
-    arrow.position.set(0, -0.05, -0.9)
-    arrow.rotation.x = -Math.PI / 2
+    arrow.position.set(0, 1.2, -0.3)
+    arrow.name = 'playerArrow'
     playerRig.add(arrow)
 
-    camera.add(playerRig)
+    scene.add(playerRig)
     playerRigRef.current = playerRig
-    scene.add(camera)
 
     // Wake meshes
     const wakeMaterial = new THREE.MeshBasicMaterial({
@@ -313,15 +319,27 @@ export const World3D = ({ state }: { state: GameState }) => {
       // Camera from player POV
       const px = snapshot.player.position.x * SCALE
       const pz = snapshot.player.position.y * SCALE
-      const bob = Math.sin(snapshot.player.bobPhase) * 0.06
-      const targetCam = new THREE.Vector3(px, PLAYER_EYE_HEIGHT + bob, pz)
-      if (!camera.position.equals(targetCam)) {
-        camera.position.lerp(targetCam, 0.18)
-      }
       const dirX = Math.cos(snapshot.player.heading)
       const dirZ = Math.sin(snapshot.player.heading)
-      const lookTarget = new THREE.Vector3(px + dirX, PLAYER_EYE_HEIGHT + bob * 0.4, pz + dirZ)
-      camera.lookAt(lookTarget)
+      const bob = Math.sin(snapshot.player.bobPhase) * 0.05
+
+      if (playerRigRef.current) {
+        playerRigRef.current.position.lerp(new THREE.Vector3(px, 0, pz), 0.3)
+        playerRigRef.current.rotation.y = Math.atan2(dirX, dirZ)
+        const arrowMesh = playerRigRef.current.getObjectByName('playerArrow') as THREE.Mesh | null
+        if (arrowMesh) {
+          arrowMesh.rotation.x = -Math.PI / 2 + Math.sin(t * 2) * 0.05
+        }
+      }
+
+      const camTarget = new THREE.Vector3(px, 0.6 + bob, pz)
+      const camPos = new THREE.Vector3(
+        px - dirX * 3.2 + Math.sin(t * 0.4) * 0.1,
+        PLAYER_EYE_HEIGHT + 0.4 - bob,
+        pz - dirZ * 3.2 + Math.cos(t * 0.4) * 0.1,
+      )
+      camera.position.lerp(camPos, 0.12)
+      camera.lookAt(camTarget)
 
       ;(water.material as THREE.ShaderMaterial).uniforms.uTime.value = t
 
@@ -440,12 +458,13 @@ export const World3D = ({ state }: { state: GameState }) => {
       // Wake animation
       if (wakeRef.current) {
         wakeRef.current.meshes.forEach((mesh, idx) => {
-          const phase = (t * 0.6 + idx * 0.4) % 1
-          const scale = 0.5 + phase * 2.4
-          mesh.position.set(px, 0.02, pz + (idx === 0 ? 0.25 : -0.2))
+          const phase = (t * 0.6 + idx * 0.35) % 1
+          const scale = 0.6 + phase * 2.6
+          mesh.position.set(px - dirX * 0.4, 0.01, pz - dirZ * 0.4)
           mesh.scale.set(scale, scale, scale)
           const material = mesh.material as THREE.MeshBasicMaterial
           material.opacity = 0.25 * (1 - phase)
+          mesh.rotation.y = Math.atan2(dirX, dirZ)
         })
       }
 

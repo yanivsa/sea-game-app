@@ -29,6 +29,21 @@ body {
   padding: 1.5rem;
   gap: 1.5rem;
   background-image: linear-gradient(135deg, rgba(10, 25, 61, 0.8), rgba(20, 25, 35, 0.9));
+  position: relative;
+}
+
+.build-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  color: #e0f2fe;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
 
 .key-row {
