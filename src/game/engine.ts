@@ -15,6 +15,8 @@ import {
   POLICE_ZONE,
   STRIKE_RADIUS,
   SUIT_BASE_SPEED,
+  SUIT_MAX_SPEED,
+  SUIT_ACCEL,
   SUIT_SPAWN_INTERVAL,
   WATER_LINE,
   MAX_SUIT_COUNT,
@@ -524,12 +526,27 @@ const updateSuits = (
         x: player.position.x - next.position.x,
         y: player.position.y - next.position.y,
       })
-      const zoneMultiplier = next.variant === 'shore' ? 1 : 0.9
-      const speed =
+      const zoneMultiplier = next.variant === 'shore' ? 1 : 0.85
+      const targetSpeed =
         SUIT_BASE_SPEED *
         zoneMultiplier *
-        (1 + next.heat * 0.5 + (player.carryingDevice ? 0.5 : 0))
-      next.velocity = { x: direction.x * speed, y: direction.y * speed }
+        (1 + next.heat * 0.45 + (player.carryingDevice ? 0.35 : 0))
+      const accel = SUIT_ACCEL * deltaMs
+      const targetVel = {
+        x: direction.x * targetSpeed,
+        y: direction.y * targetSpeed,
+      }
+      next.velocity = {
+        x: next.velocity.x + (targetVel.x - next.velocity.x) * accel,
+        y: next.velocity.y + (targetVel.y - next.velocity.y) * accel,
+      }
+      const speedMag = Math.hypot(next.velocity.x, next.velocity.y)
+      if (speedMag > SUIT_MAX_SPEED) {
+        next.velocity = {
+          x: (next.velocity.x / speedMag) * SUIT_MAX_SPEED,
+          y: (next.velocity.y / speedMag) * SUIT_MAX_SPEED,
+        }
+      }
       next.position = capPlayerBounds({
         x: next.position.x + next.velocity.x * deltaMs,
         y: next.position.y + next.velocity.y * deltaMs,

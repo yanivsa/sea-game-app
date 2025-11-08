@@ -12,8 +12,10 @@ export const PLAYER_DIVE_SPEED = 0.15
 export const PLAYER_SPRINT_MULTIPLIER = 1.35
 export const PLAYER_STAMINA_DRAIN = 0.002
 
-export const SUIT_BASE_SPEED = 0.08
-export const SUIT_SPAWN_INTERVAL = 4200
+export const SUIT_BASE_SPEED = 0.05
+export const SUIT_MAX_SPEED = 0.12
+export const SUIT_ACCEL = 0.00008
+export const SUIT_SPAWN_INTERVAL = 4600
 export const MAX_SUIT_COUNT = 14
 
 export const POLICE_ZONE = {
