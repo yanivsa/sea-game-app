@@ -114,12 +114,23 @@ export const useGameEngine = (handle: string | null) => {
     replaceState(next)
   }, [replaceState])
 
+  const setProfileHandle = useCallback((name: string) => {
+    const trimmed = name.trim() || 'שומר-הצוק'
+    const next = {
+      ...stateRef.current,
+      profile: { handle: trimmed },
+      player: { ...stateRef.current.player, name: trimmed },
+    }
+    replaceState(next)
+  }, [replaceState])
+
   return useMemo(
     () => ({
       state,
       resetGame,
       refreshLeaderboard,
+      setProfileHandle,
     }),
-    [state, resetGame, refreshLeaderboard],
+    [state, resetGame, refreshLeaderboard, setProfileHandle],
   )
 }

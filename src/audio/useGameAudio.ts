@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GameState } from '../game/types'
 import { createAudioBus, sfx, startAmbient } from './sfx'
+import { applyWeatherToSoundscape, createSoundscape } from './soundscape'
 
 export const useGameAudio = (state: GameState, armed: boolean) => {
   const busRef = useRef<ReturnType<typeof createAudioBus> | null>(null)
   const ambientRef = useRef<{ stop: () => void } | null>(null)
+  const soundscapeRef = useRef<ReturnType<typeof createSoundscape> | null>(null)
   const [ready, setReady] = useState(false)
   const prevRef = useRef<{
     pulses: number
@@ -31,15 +33,20 @@ export const useGameAudio = (state: GameState, armed: boolean) => {
     if (!busRef.current) {
       busRef.current = createAudioBus()
     }
+    if (!soundscapeRef.current) {
+      soundscapeRef.current = createSoundscape()
+    }
     setReady(!!busRef.current)
   }, [])
 
   // Resume & ambient when armed
   useEffect(() => {
     const bus = busRef.current
+    const scape = soundscapeRef.current
     if (!bus) return
     if (armed && bus.ctx.state !== 'running') {
       bus.ctx.resume().catch(() => {})
+      scape?.ctx.resume().catch(() => {})
     }
     if (armed && !ambientRef.current) {
       ambientRef.current = startAmbient(bus)
@@ -52,6 +59,7 @@ export const useGameAudio = (state: GameState, armed: boolean) => {
   // React to gameplay deltas
   useEffect(() => {
     const bus = busRef.current
+    const scape = soundscapeRef.current
     if (!bus || !ready || bus.ctx.state !== 'running') return
     const prev = prevRef.current
     const next = {
@@ -101,7 +109,10 @@ export const useGameAudio = (state: GameState, armed: boolean) => {
       if (head.includes('הדפת') || head.includes('פגעת')) sfx.hit(bus)
     }
 
+    if (scape) {
+      applyWeatherToSoundscape(scape, state.weather)
+    }
+
     prevRef.current = next
   }, [state, ready])
 }
-

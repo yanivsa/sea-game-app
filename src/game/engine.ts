@@ -15,9 +15,6 @@ import {
   PLAYER_TURN_SPEED,
   POLICE_ZONE,
   STRIKE_RADIUS,
-  SUIT_BASE_SPEED,
-  SUIT_MAX_SPEED,
-  SUIT_ACCEL,
   SUIT_SPAWN_INTERVAL,
   WATER_LINE,
   MAX_SUIT_COUNT,
@@ -35,8 +32,11 @@ import type {
   SuitAgent,
   Vector2,
   ZoneType,
+  WeatherState,
 } from './types'
-import { clamp, distance, lerp, normalize, pick, randomRange } from './utils'
+import { clamp, distance, lerp, pick, randomRange } from './utils'
+import { pickWeatherPattern, pointInSector } from './worldConfig'
+import { updateSuitBrain, createSuitAnchor } from './ai'
 
 const nowTime = () =>
   typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -57,10 +57,8 @@ const capPlayerBounds = (value: Vector2): Vector2 => ({
   y: clamp(value.y, CLIFF_LINE - 20, MAP_HEIGHT - 40),
 })
 
-const spawnSuit = (variant: 'shore' | 'water'): SuitAgent => ({
-  id: ++suitId,
-  variant,
-  position:
+const spawnSuit = (variant: 'shore' | 'water'): SuitAgent => {
+  const position =
     variant === 'shore'
       ? {
           x: randomRange(80, MAP_WIDTH - 80),
@@ -69,11 +67,19 @@ const spawnSuit = (variant: 'shore' | 'water'): SuitAgent => ({
       : {
           x: randomRange(140, MAP_WIDTH - 140),
           y: randomRange(WATER_LINE + 30, MAP_HEIGHT - 50),
-        },
-  velocity: { x: 0, y: 0 },
-  stunnedMs: 0,
-  heat: randomRange(0.1, 0.8),
-})
+        }
+  return {
+    id: ++suitId,
+    variant,
+    position,
+    velocity: { x: 0, y: 0 },
+    stunnedMs: 0,
+    heat: randomRange(0.1, 0.8),
+    state: 'patrol',
+    stateTimer: randomRange(1500, 2600),
+    anchor: createSuitAnchor(position),
+  }
+}
 
 const createPulse = (
   position: Vector2,
@@ -188,11 +194,13 @@ export const createInitialState = (
   now = nowTime(),
 ): GameState => {
   const profileHandle = handle?.trim() || 'שומר-הצוק'
+  const worldSeed = Math.floor(now + Math.random() * 10000)
+  const weather = pickWeatherPattern(worldSeed, 1)
   const player: PlayerState = {
     name: profileHandle,
-    position: { x: 140, y: WATER_LINE - 40 },
+    position: { x: MAP_WIDTH * 0.2, y: WATER_LINE - 80 },
     velocity: { x: 0, y: 0 },
-    heading: 0,
+    heading: -Math.PI / 2,
     bobPhase: 0,
     sway: 0,
     stamina: 100,
@@ -223,6 +231,10 @@ export const createInitialState = (
     threatLevel: 0.1,
     lastTimestamp: now,
     structures: generateStructures(),
+    currentSectorId: pointInSector(player.position)?.id,
+    weather,
+    weatherTimer: 90000,
+    worldSeed,
     leaderboard: [],
   }
 }
@@ -264,7 +276,7 @@ export const snapshotInputs = (pressed: Set<string>): InputSnapshot => {
 }
 
 const resolveMovementVector = (input: InputSnapshot) => {
-  const forward = (input.forward ? 1 : 0) + (input.backward ? -1 : 0)
+  const forward = (input.forward ? -1 : 0) + (input.backward ? 1 : 0)
   const turn = (input.right ? 1 : 0) + (input.left ? -1 : 0)
   return { forward, turn }
 }
@@ -524,31 +536,12 @@ const updateSuits = (
         next.stunnedMs = Math.max(0, next.stunnedMs - deltaMs)
         return next
       }
-      const direction = normalize({
-        x: player.position.x - next.position.x,
-        y: player.position.y - next.position.y,
-      })
-      const zoneMultiplier = next.variant === 'shore' ? 1 : 0.85
-      const targetSpeed =
-        SUIT_BASE_SPEED *
-        zoneMultiplier *
-        (1 + next.heat * 0.45 + (player.carryingDevice ? 0.35 : 0))
-      const accel = SUIT_ACCEL * deltaMs
-      const targetVel = {
-        x: direction.x * targetSpeed,
-        y: direction.y * targetSpeed,
-      }
-      next.velocity = {
-        x: next.velocity.x + (targetVel.x - next.velocity.x) * accel,
-        y: next.velocity.y + (targetVel.y - next.velocity.y) * accel,
-      }
-      const speedMag = Math.hypot(next.velocity.x, next.velocity.y)
-      if (speedMag > SUIT_MAX_SPEED) {
-        next.velocity = {
-          x: (next.velocity.x / speedMag) * SUIT_MAX_SPEED,
-          y: (next.velocity.y / speedMag) * SUIT_MAX_SPEED,
-        }
-      }
+      const brain = updateSuitBrain(next, player, player.inWater ? 1 : 0.4, deltaMs)
+      next.velocity = brain.velocity
+      next.state = brain.state
+      next.stateTimer = brain.stateTimer
+      next.anchor = brain.anchor
+      next.lastKnownPlayer = brain.lastKnownPlayer
       next.position = capPlayerBounds({
         x: next.position.x + next.velocity.x * deltaMs,
         y: next.position.y + next.velocity.y * deltaMs,
@@ -570,9 +563,9 @@ const applySuitPressure = (
   suits.forEach((suit) => {
     const distToPlayer = distance(suit.position, state.player.position)
     if (distToPlayer <= DETECTION_RADIUS && suit.stunnedMs <= 0) {
-      focus -= 0.01 * deltaMs
-      integrity -= 0.003 * deltaMs
-      threat += 0.0004 * deltaMs
+      focus -= 0.007 * deltaMs
+      integrity -= 0.0018 * deltaMs
+      threat += 0.00025 * deltaMs
     }
   })
 
@@ -689,6 +682,23 @@ export const advanceFrame = (
     clockMs: Math.max(0, prev.clockMs - deltaMs),
   }
 
+  // Weather progression
+  let weatherTimer = prev.weatherTimer - deltaMs
+  let weather: WeatherState = prev.weather
+  if (weatherTimer <= 0) {
+    weather = pickWeatherPattern(prev.worldSeed, next.dayIndex + 1)
+    weatherTimer = 90000
+    next.intel = appendIntel(
+      next,
+      `תנאי מזג האוויר השתנו ל-${weather.label}. התאם את האסטרטגיה שלך.`,
+      'intel',
+      now,
+    )
+  }
+  next.weather = weather
+  next.weatherTimer = weatherTimer
+  next.tideLevel = 0.45 + Math.sin(now / 60000) * 0.3 + weather.waveStrength * 0.1
+
   const elapsedRatio =
     1 - next.clockMs / next.totalDurationMs
   const newDayIndex = clamp(
@@ -729,6 +739,12 @@ export const advanceFrame = (
   const suits = updateSuits(next.suits, next.player, deltaMs)
   next = { ...next, suits }
   next = applySuitPressure(next, suits, deltaMs)
+
+  const sector = pointInSector(next.player.position)
+  if (sector && sector.id !== next.currentSectorId) {
+    next.currentSectorId = sector.id
+    next.intel = appendIntel(next, sector.intelHint, 'intel', now)
+  }
 
   const spawnResult = maybeSpawnSuit(next, now)
   next = spawnResult.state

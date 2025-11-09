@@ -423,6 +423,31 @@ body {
   font-size: 0.95rem;
 }
 
+.name-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.name-capture input {
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+}
+
+.name-capture button {
+  padding: 0.75rem 1.2rem;
+  border-radius: 999px;
+  border: none;
+  font-weight: 600;
+  background: linear-gradient(120deg, #22d3ee, #818cf8);
+  color: #01040c;
+  cursor: pointer;
+}
+
 .mini-map {
   width: 100%;
   border-radius: 1rem;

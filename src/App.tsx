@@ -9,6 +9,7 @@ import { useGameAudio } from './audio/useGameAudio'
 import { MiniMap } from './components/MiniMap'
 import { TrackerHUD } from './components/TrackerHUD'
 import { clamp, distance } from './game/utils'
+import { WORLD_SECTORS } from './game/worldConfig'
 
 const formatClock = (ms: number) => {
   const safeMs = Math.max(0, Math.floor(ms))
@@ -22,7 +23,7 @@ const formatDuration = (ms: number) => {
   return `${minutes} דק׳`
 }
 
-const BUILD_VERSION = 'v0.7.0'
+const BUILD_VERSION = 'v0.9.0'
 
 const keyLegend = [
   { hotkey: '⬆⬇⬅➡', label: 'תנועה קדימה ואחורה' },
@@ -34,16 +35,17 @@ const keyLegend = [
 ]
 
 function App() {
-  const [handleInput, setHandleInput] = useState('')
   const [launched, setLaunched] = useState(false)
   const [records, setRecords] = useState<LeaderboardRecord[]>([])
-  const lastSubmissionRef = useRef<number | null>(null)
   const [submissionState, setSubmissionState] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
+  const [awaitingName, setAwaitingName] = useState(false)
+  const [pendingName, setPendingName] = useState('')
+  const [scoreEligible, setScoreEligible] = useState(false)
+  const scoreSubmittedRef = useRef(false)
 
-  const missionHandle = launched ? handleInput.trim() : null
-  const { state, resetGame, refreshLeaderboard } = useGameEngine(missionHandle)
+  const { state, resetGame, refreshLeaderboard, setProfileHandle } = useGameEngine(null)
 
   // Hook up synthesized game audio
   useGameAudio(state, launched)
@@ -56,33 +58,51 @@ function App() {
   }, [refreshLeaderboard])
 
   useEffect(() => {
-    if (state.phase === 'won' && state.scoreMs && missionHandle) {
-      if (lastSubmissionRef.current === state.scoreMs) return
-      lastSubmissionRef.current = state.scoreMs
-      setSubmissionState('saving')
-      submitScore({
-        username: state.profile.handle,
-        durationMs: state.scoreMs,
-        dayCount: state.dayIndex,
-      })
-        .then((newRecord) => {
-          setSubmissionState('saved')
-          if (newRecord) {
-            setRecords((prev) => {
-              const next = [...prev, newRecord]
-                .sort((a, b) => a.durationMs - b.durationMs)
-                .slice(0, 10)
-              refreshLeaderboard(next)
-              return next
-            })
-          }
-        })
-        .catch(() => setSubmissionState('error'))
-    } else if (state.phase !== 'won') {
-      setSubmissionState('idle')
-      lastSubmissionRef.current = null
+    if (state.phase !== 'won' || !state.scoreMs) {
+      setAwaitingName(false)
+      setScoreEligible(false)
+      if (state.phase !== 'won') {
+        setSubmissionState('idle')
+        scoreSubmittedRef.current = false
+      }
+      return
     }
-  }, [state.phase, state.scoreMs, state.profile.handle, missionHandle, state.dayIndex, refreshLeaderboard])
+    const worst = records[records.length - 1]?.durationMs ?? Infinity
+    const qualifies = records.length < 10 || state.scoreMs < worst
+    setScoreEligible(qualifies)
+    if (qualifies && !scoreSubmittedRef.current) {
+      setAwaitingName(true)
+      setPendingName('')
+    }
+  }, [state.phase, state.scoreMs, records])
+
+  const handleScoreSubmit = () => {
+    if (!state.scoreMs || scoreSubmittedRef.current) return
+    const name = pendingName.trim()
+    if (!name) return
+    setProfileHandle(name)
+    setSubmissionState('saving')
+    scoreSubmittedRef.current = true
+    submitScore({
+      username: name,
+      durationMs: state.scoreMs,
+      dayCount: state.dayIndex,
+    })
+      .then((newRecord) => {
+        setSubmissionState('saved')
+        if (newRecord) {
+          setRecords((prev) => {
+            const next = [...prev, newRecord]
+              .sort((a, b) => a.durationMs - b.durationMs)
+              .slice(0, 10)
+            refreshLeaderboard(next)
+            return next
+          })
+        }
+      })
+      .catch(() => setSubmissionState('error'))
+      .finally(() => setAwaitingName(false))
+  }
 
   const bestRecord = records[0]
   const daysWindow = DEVICE_UNLOCK_DAY
@@ -127,11 +147,17 @@ function App() {
     [state.player, state.threatLevel],
   )
 
-  const readyToLaunch = handleInput.trim().length >= 2
+  const currentSector = useMemo(
+    () => WORLD_SECTORS.find((sector) => sector.id === state.currentSectorId)?.label,
+    [state.currentSectorId],
+  )
 
   const restartMission = () => {
-    lastSubmissionRef.current = null
     resetGame()
+    setPendingName('')
+    setAwaitingName(false)
+    scoreSubmittedRef.current = false
+    setSubmissionState('idle')
   }
 
   return (
@@ -246,6 +272,8 @@ function App() {
               signal={state.device.retrieved ? 1 : phoneTelemetry.signal}
               threat={state.threatLevel}
               tide={state.tideLevel}
+              weatherLabel={state.weather.label}
+              sectorLabel={currentSector}
             />
           </div>
         </section>
@@ -264,14 +292,7 @@ function App() {
               <li>מכת הרתעה (רווח) פותחת חלון בריחה קצר – אל תיתקע בתוך קבוצה.</li>
               <li>מסירת המכשיר (Enter) אפשרית רק בתוך מעגל תחנת המשטרה בצפון המפה.</li>
             </ul>
-            <input
-              placeholder="הקלד שם לוחם / שם משתמש"
-              value={handleInput}
-              onChange={(event) => setHandleInput(event.target.value)}
-            />
-            <button disabled={!readyToLaunch} onClick={() => readyToLaunch && setLaunched(true)}>
-              כניסה למשימה
-            </button>
+            <button onClick={() => setLaunched(true)}>כניסה למשימה</button>
           </div>
         </div>
       )}
@@ -286,10 +307,24 @@ function App() {
                 השלמת ב־{formatDuration(state.scoreMs)} • {state.dayIndex} ימים בתוך החלון
               </p>
             )}
-            {submissionState === 'saving' && <p>שומר את השיא בענן…</p>}
-            {submissionState === 'error' && (
-              <p>לא הצלחנו לשמור את השיא בענן. שמרנו מקומית.</p>
+            {state.phase === 'won' && scoreEligible && awaitingName && (
+              <div className="name-capture">
+                <p>שברת את טבלת ה-10 המהירים! הזן שם לשימור בזיכרון החוף.</p>
+                <input
+                  placeholder="שם לוחם"
+                  value={pendingName}
+                  onChange={(event) => setPendingName(event.target.value)}
+                />
+                <button disabled={!pendingName.trim() || submissionState === 'saving'} onClick={handleScoreSubmit}>
+                  שמירת השיא
+                </button>
+              </div>
             )}
+            {state.phase === 'won' && !scoreEligible && (
+              <p>המשימה הושלמה! השג תוצאה מהירה יותר כדי להיכנס לטופ 10.</p>
+            )}
+            {submissionState === 'saving' && <p>שומר את השיא בענן…</p>}
+            {submissionState === 'error' && <p>לא הצלחנו לשמור את השיא בענן. נסה שוב.</p>}
             <div className="overlay-actions">
               <button onClick={restartMission}>משחק מחדש</button>
             </div>

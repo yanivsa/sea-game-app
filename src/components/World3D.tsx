@@ -1,34 +1,31 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import type { GameState, StructureKind } from '../game/types'
-import { MAP_HEIGHT, MAP_WIDTH, WATER_LINE, CLIFF_LINE } from '../game/constants'
-import { createWaterMaterial } from '../shaders/water'
+import type { GameState } from '../game/types'
+import { MAP_WIDTH, WATER_LINE, CLIFF_LINE } from '../game/constants'
+import { createPlayerRig } from '../three/playerRig'
+import type { PlayerRig } from '../three/playerRig'
+import { buildTerrain, createStructureMesh } from '../three/environment'
+import { createSuitRig } from '../three/suitRig'
+import { CameraRig } from '../three/controllers/CameraRig'
+import { PhysicsWorld } from '../three/physics/PhysicsWorld'
 
 const SCALE = 0.05 // world units per pixel (scene meters per map pixel)
-
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
-
-// Simple tiled noise using sums of sines for dunes/waves
-const noise2 = (x: number, z: number) => {
-  return (
-    Math.sin(x * 0.35 + z * 0.12) * 0.5 +
-    Math.sin(x * 0.12 - z * 0.32) * 0.35 +
-    Math.cos(x * 0.06 + z * 0.07) * 0.15
-  )
-}
 
 export const World3D = ({ state }: { state: GameState }) => {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const cameraRigRef = useRef<CameraRig | null>(null)
   const suitsGroupRef = useRef<THREE.Group | null>(null)
   const structuresRef = useRef<THREE.Group | null>(null)
   const playerRigRef = useRef<THREE.Group | null>(null)
+  const playerRigDataRef = useRef<PlayerRig | null>(null)
   const wakeRef = useRef<{ meshes: THREE.Mesh[] } | null>(null)
   const deviceRef = useRef<THREE.Mesh | null>(null)
   const policeRef = useRef<THREE.Mesh | null>(null)
+  const waterRef = useRef<THREE.Mesh | null>(null)
   const stateRef = useRef<GameState>(state)
+  const physicsRef = useRef<PhysicsWorld | null>(null)
 
   useEffect(() => {
     stateRef.current = state
@@ -42,12 +39,13 @@ export const World3D = ({ state }: { state: GameState }) => {
     const height = mount.clientHeight
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x06142e)
-    scene.fog = new THREE.Fog(0x06142e, 20, 140)
+    const initialWeather = stateRef.current.weather
+    scene.background = new THREE.Color(initialWeather?.skyTint ?? 0x06142e)
+    scene.fog = new THREE.Fog(initialWeather?.fogTint ?? 0x06142e, 20, 160)
     sceneRef.current = scene
 
-    const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 500)
-    cameraRef.current = camera
+    const cameraRig = new CameraRig(60, width / height, 0.1, 1200)
+    cameraRigRef.current = cameraRig
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -56,62 +54,26 @@ export const World3D = ({ state }: { state: GameState }) => {
     mount.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
+    physicsRef.current = new PhysicsWorld()
+
     // Lights
-    const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x35220c, 0.85)
+    const hemi = new THREE.HemisphereLight(0xeaf2ff, 0x35220c, 0.95)
     scene.add(hemi)
-    const dir = new THREE.DirectionalLight(0xffffff, 0.65)
-    dir.position.set(30, 60, -20)
-    dir.castShadow = false
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9)
+    dir.position.set(60, 120, -80)
+    dir.castShadow = true
+    dir.shadow.mapSize.set(2048, 2048)
+    dir.shadow.camera.near = 1
+    dir.shadow.camera.far = 400
+    dir.shadow.camera.left = -80
+    dir.shadow.camera.right = 80
+    dir.shadow.camera.top = 80
+    dir.shadow.camera.bottom = -80
     scene.add(dir)
 
-    // Ground (sand) subdivided + dunes around CLIFF_LINE
-    const groundSeg = 160
-    const groundGeo = new THREE.PlaneGeometry(
-      MAP_WIDTH * SCALE,
-      MAP_HEIGHT * SCALE,
-      groundSeg,
-      groundSeg,
-    )
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: 0xcaa96f,
-      roughness: 1,
-      metalness: 0,
-    })
-    const ground = new THREE.Mesh(groundGeo, groundMat)
-    ground.rotation.x = -Math.PI / 2
-    ground.position.set((MAP_WIDTH * SCALE) / 2, 0, (MAP_HEIGHT * SCALE) / 2)
-    // Sculpt dunes
-    const pos = groundGeo.attributes.position as THREE.BufferAttribute
-    for (let i = 0; i < pos.count; i++) {
-      const vx = pos.getX(i)
-      const vz = pos.getZ(i)
-      // Map scene z back to map y pixels
-      const mapY = vz / SCALE
-      // Dunes strongest near CLIFF_LINE..WATER_LINE
-      const band = clamp((mapY - CLIFF_LINE) / (WATER_LINE - CLIFF_LINE), 0, 1)
-      const influence = Math.sin(band * Math.PI) // bell curve across band
-      const h = noise2(vx * 0.8, vz * 0.8) * 0.6 * influence
-      pos.setY(i, h)
-    }
-    pos.needsUpdate = true
-    groundGeo.computeVertexNormals()
-    scene.add(ground)
-
-    // Water band
-    const waterDepth = (MAP_HEIGHT - WATER_LINE) * SCALE
-    const waterSegW = 120
-    const waterSegH = 80
-    const waterGeo = new THREE.PlaneGeometry(
-      MAP_WIDTH * SCALE,
-      waterDepth,
-      waterSegW,
-      waterSegH,
-    )
-    const waterMat = createWaterMaterial()
-    const water = new THREE.Mesh(waterGeo, waterMat)
-    water.rotation.x = -Math.PI / 2
-    water.position.set((MAP_WIDTH * SCALE) / 2, 0.02, (WATER_LINE * SCALE) + waterDepth / 2)
-    scene.add(water)
+    const { container: terrain, water } = buildTerrain(stateRef.current.worldSeed)
+    scene.add(terrain)
+    waterRef.current = water
 
     // Cliff line (visual accent)
     const cliffWidth = (WATER_LINE - CLIFF_LINE) * SCALE
@@ -170,39 +132,10 @@ export const World3D = ({ state }: { state: GameState }) => {
     policeRef.current = police
 
     // Player rig (visible in world)
-    const playerRig = new THREE.Group()
-    const board = new THREE.Mesh(
-      new THREE.BoxGeometry(0.6, 0.08, 1.4),
-      new THREE.MeshStandardMaterial({ color: 0x0f365c, roughness: 0.25, metalness: 0.35 }),
-    )
-    board.position.y = 0.08
-    playerRig.add(board)
-
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.2, 0.8, 8, 16),
-      new THREE.MeshStandardMaterial({ color: 0xfcbf9e, roughness: 0.6 }),
-    )
-    body.position.y = 0.7
-    playerRig.add(body)
-
-    const paddle = new THREE.Mesh(
-      new THREE.BoxGeometry(0.05, 0.05, 1),
-      new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 }),
-    )
-    paddle.position.set(0.35, 0.4, 0)
-    paddle.rotation.y = Math.PI / 5
-    playerRig.add(paddle)
-
-    const arrow = new THREE.Mesh(
-      new THREE.ConeGeometry(0.12, 0.5, 16),
-      new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xf2c744, emissiveIntensity: 0.8 }),
-    )
-    arrow.position.set(0, 1.2, -0.3)
-    arrow.name = 'playerArrow'
-    playerRig.add(arrow)
-
-    scene.add(playerRig)
-    playerRigRef.current = playerRig
+    const playerRigData = createPlayerRig()
+    scene.add(playerRigData.group)
+    playerRigRef.current = playerRigData.group
+    playerRigDataRef.current = playerRigData
 
     // Wake meshes
     const wakeMaterial = new THREE.MeshBasicMaterial({
@@ -219,90 +152,11 @@ export const World3D = ({ state }: { state: GameState }) => {
     scene.add(wake2)
     wakeRef.current = { meshes: [wake1, wake2] }
 
-    const createStructureMesh = (kind: StructureKind) => {
-      switch (kind) {
-        case 'rock': {
-          const geom = new THREE.DodecahedronGeometry(0.4, 0)
-          const mat = new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 0.95 })
-          return new THREE.Mesh(geom, mat)
-        }
-        case 'lifeguard': {
-          const tower = new THREE.Group()
-          const legs = new THREE.Mesh(
-            new THREE.BoxGeometry(0.8, 0.05, 0.8),
-            new THREE.MeshStandardMaterial({ color: 0xb08a5b, roughness: 0.9 }),
-          )
-          legs.position.y = 0.2
-          tower.add(legs)
-          const cabin = new THREE.Mesh(
-            new THREE.BoxGeometry(0.8, 0.4, 0.8),
-            new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 }),
-          )
-          cabin.position.y = 0.6
-          tower.add(cabin)
-          const roof = new THREE.Mesh(
-            new THREE.BoxGeometry(0.9, 0.05, 0.9),
-            new THREE.MeshStandardMaterial({ color: 0xf87171, roughness: 0.7 }),
-          )
-          roof.position.y = 0.83
-          tower.add(roof)
-          return tower
-        }
-        case 'flag': {
-          const group = new THREE.Group()
-          const pole = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.02, 0.02, 1.6, 12),
-            new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 }),
-          )
-          pole.position.y = 0.8
-          group.add(pole)
-          const flag = new THREE.Mesh(
-            new THREE.PlaneGeometry(0.5, 0.3),
-            new THREE.MeshBasicMaterial({ color: 0xf43f5e, side: THREE.DoubleSide }),
-          )
-          flag.position.set(0.26, 1.2, 0)
-          flag.rotation.y = Math.PI / 2
-          group.add(flag)
-          return group
-        }
-        case 'buoy': {
-          const group = new THREE.Group()
-          const base = new THREE.Mesh(
-            new THREE.SphereGeometry(0.2, 16, 16),
-            new THREE.MeshPhongMaterial({ color: 0x22d3ee, shininess: 60 }),
-          )
-          base.position.y = 0.2
-          group.add(base)
-          const mast = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8),
-            new THREE.MeshStandardMaterial({ color: 0x0f172a }),
-          )
-          mast.position.y = 0.7
-          group.add(mast)
-          return group
-        }
-        case 'driftwood': {
-          const wood = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.07, 0.06, 1.2, 8),
-            new THREE.MeshStandardMaterial({ color: 0x7a4d1f, roughness: 0.9 }),
-          )
-          wood.rotation.z = Math.PI / 2.5
-          return wood
-        }
-        default:
-          return new THREE.Mesh(
-            new THREE.BoxGeometry(0.4, 0.2, 0.4),
-            new THREE.MeshStandardMaterial({ color: 0x94a3b8 }),
-          )
-      }
-    }
-
     const onResize = () => {
       const w = mount.clientWidth
       const h = mount.clientHeight
       renderer.setSize(w, h)
-      camera.aspect = w / h
-      camera.updateProjectionMatrix()
+      cameraRig.resize(w, h)
     }
     window.addEventListener('resize', onResize)
 
@@ -314,7 +168,8 @@ export const World3D = ({ state }: { state: GameState }) => {
         raf = requestAnimationFrame(tick)
         return
       }
-      const t = clock.getElapsedTime()
+      const delta = clock.getDelta()
+      const t = clock.elapsedTime
       // Camera from player POV
       const px = snapshot.player.position.x * SCALE
       const pz = snapshot.player.position.y * SCALE
@@ -322,74 +177,48 @@ export const World3D = ({ state }: { state: GameState }) => {
       const dirZ = Math.sin(snapshot.player.heading)
       const bob = Math.sin(snapshot.player.bobPhase) * 0.05
 
-      if (playerRigRef.current) {
-        playerRigRef.current.position.lerp(new THREE.Vector3(px, 0, pz), 0.25)
-        playerRigRef.current.rotation.y = Math.atan2(dirX, dirZ)
-        const arrowMesh = playerRigRef.current.getObjectByName('playerArrow') as THREE.Mesh | null
-        if (arrowMesh) {
-          arrowMesh.rotation.x = -Math.PI / 2 + Math.sin(t * 2) * 0.05
+      if (scene.background instanceof THREE.Color) {
+        scene.background.setHex(snapshot.weather.skyTint)
+      } else {
+        scene.background = new THREE.Color(snapshot.weather.skyTint)
+      }
+      if (scene.fog instanceof THREE.Fog) {
+        scene.fog.color.setHex(snapshot.weather.fogTint)
+      }
+      hemi.intensity = 0.75 + snapshot.weather.ambientGain * 0.3
+      dir.intensity = 0.8 + snapshot.weather.ambientGain * 0.4
+      dir.position.y = 100 + snapshot.weather.waveStrength * 20
+
+      const physics = physicsRef.current
+      if (physics) {
+        physics.syncPlayer(new THREE.Vector3(px, 0, pz), new THREE.Vector3(dirX, 0, dirZ))
+        physics.step(delta)
+        const bodyPos = physics.entities.player.position
+        if (playerRigRef.current && playerRigDataRef.current) {
+          playerRigRef.current.position.lerp(new THREE.Vector3(bodyPos.x, bodyPos.y, bodyPos.z), 0.4)
+          playerRigRef.current.rotation.y = Math.atan2(dirX, dirZ)
+          playerRigDataRef.current.arrow.rotation.x = -Math.PI / 2 + Math.sin(t * 2) * 0.05
+          playerRigDataRef.current.paddle.rotation.z = Math.sin(t * 2) * 0.25
         }
       }
 
-      const camTarget = new THREE.Vector3(px, 1.2 + bob * 0.5, pz)
-      const camPos = new THREE.Vector3(
-        px - dirX * 6.0 + dirZ * 1.5,
-        4.0 - bob * 0.5,
-        pz - dirZ * 6.0 - dirX * 1.5,
-      )
-      camera.position.lerp(camPos, 0.1)
-      camera.lookAt(camTarget)
+      const cameraRig = cameraRigRef.current
+      if (cameraRig) {
+        const anchor = physicsRef.current ? physicsRef.current.entities.player.position : { x: px, y: 0, z: pz }
+        cameraRig.update(delta, new THREE.Vector3(anchor.x, anchor.y, anchor.z), new THREE.Vector3(dirX, 0, dirZ), bob)
+      }
 
-      ;(water.material as THREE.ShaderMaterial).uniforms.uTime.value = t
+      const waterMesh = waterRef.current
+      if (waterMesh) {
+        const material = waterMesh.material as THREE.ShaderMaterial
+        material.uniforms.uTime.value = t
+        material.uniforms.uStrength.value = snapshot.weather.waveStrength
+      }
 
       // Update suits meshes count
       const desired = snapshot.suits.length
       while (suitsGroup.children.length < desired) {
-        // Build simple low-poly rig: torso + head + arms + legs
-        const rig = new THREE.Group()
-        const torso = new THREE.Mesh(
-          new THREE.BoxGeometry(0.42, 0.9, 0.3),
-          new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.1, roughness: 0.85 })
-        )
-        torso.position.y = 0.9
-        torso.name = 'torso'
-        rig.add(torso)
-
-        const head = new THREE.Mesh(
-          new THREE.BoxGeometry(0.28, 0.28, 0.28),
-          new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.2, roughness: 0.6 })
-        )
-        head.position.y = 1.45
-        head.name = 'head'
-        rig.add(head)
-
-        const leftArm = new THREE.Mesh(
-          new THREE.BoxGeometry(0.12, 0.6, 0.12),
-          new THREE.MeshStandardMaterial({ color: 0x0e0e0e })
-        )
-        leftArm.position.set(-0.3, 1.05, 0)
-        leftArm.name = 'armL'
-        rig.add(leftArm)
-
-        const rightArm = leftArm.clone()
-        rightArm.position.x = 0.3
-        rightArm.name = 'armR'
-        rig.add(rightArm)
-
-        const leftLeg = new THREE.Mesh(
-          new THREE.BoxGeometry(0.14, 0.7, 0.14),
-          new THREE.MeshStandardMaterial({ color: 0x0a0a0a })
-        )
-        leftLeg.position.set(-0.12, 0.35, 0)
-        leftLeg.name = 'legL'
-        rig.add(leftLeg)
-
-        const rightLeg = leftLeg.clone()
-        rightLeg.position.x = 0.12
-        rightLeg.name = 'legR'
-        rig.add(rightLeg)
-
-        suitsGroup.add(rig)
+        suitsGroup.add(createSuitRig())
       }
       while (suitsGroup.children.length > desired) {
         const last = suitsGroup.children[suitsGroup.children.length - 1]
@@ -488,7 +317,10 @@ export const World3D = ({ state }: { state: GameState }) => {
         existing.forEach((mesh) => group.remove(mesh))
       }
 
-      renderer.render(scene, camera)
+      const activeCamera = cameraRigRef.current?.camera
+      if (activeCamera) {
+        renderer.render(scene, activeCamera)
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)

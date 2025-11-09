@@ -8,6 +8,8 @@ interface TrackerProps {
   signal: number
   threat: number
   tide: number
+  weatherLabel: string
+  sectorLabel?: string
 }
 
 const headingLabel = (deg: number) => {
@@ -25,6 +27,8 @@ export const TrackerHUD = ({
   signal,
   threat,
   tide,
+  weatherLabel,
+  sectorLabel,
 }: TrackerProps) => {
   const directionName = headingLabel(bearingDeg)
   const status = retrieved
@@ -53,6 +57,7 @@ export const TrackerHUD = ({
         <div className="tracker-status">
           <span>{status}</span>
           <strong>{(distance / 10).toFixed(1)} מ׳</strong>
+          <small>{weatherLabel}{sectorLabel ? ` • ${sectorLabel}` : ''}</small>
         </div>
       </div>
 

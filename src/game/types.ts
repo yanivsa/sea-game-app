@@ -5,6 +5,8 @@ export interface Vector2 {
 
 export type ZoneType = 'sand' | 'water' | 'cliff' | 'police'
 
+export type SuitBehaviorState = 'patrol' | 'investigate' | 'chase' | 'recover'
+
 export interface SuitAgent {
   id: number
   variant: 'shore' | 'water'
@@ -12,6 +14,10 @@ export interface SuitAgent {
   velocity: Vector2
   stunnedMs: number
   heat: number
+  state?: SuitBehaviorState
+  stateTimer?: number
+  anchor?: Vector2
+  lastKnownPlayer?: Vector2
 }
 
 export interface PulsePing {
@@ -67,6 +73,15 @@ export interface Structure {
   height: number
 }
 
+export interface WeatherState {
+  id: string
+  label: string
+  skyTint: number
+  fogTint: number
+  waveStrength: number
+  ambientGain: number
+}
+
 export interface ActionFlags {
   strike: boolean
   scan: boolean
@@ -92,6 +107,10 @@ export interface GameState {
   threatLevel: number
   lastTimestamp: number
   structures: Structure[]
+  weather: WeatherState
+  weatherTimer: number
+  worldSeed: number
+  currentSectorId?: string
   reason?: string
   scoreMs?: number
   leaderboard: LeaderboardRecord[]

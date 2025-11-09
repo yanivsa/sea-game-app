@@ -1,7 +1,7 @@
-export const MAP_WIDTH = 960
-export const MAP_HEIGHT = 520
-export const CLIFF_LINE = 160
-export const WATER_LINE = 300
+export const MAP_WIDTH = 1920
+export const MAP_HEIGHT = 1080
+export const CLIFF_LINE = 220
+export const WATER_LINE = 520
 export const GAME_DURATION_MS = 15 * 60 * 1000 // 15 minutes -> 15 in-world days
 export const MAX_DAYS = 15
 export const DEVICE_UNLOCK_DAY = 4
@@ -13,18 +13,18 @@ export const PLAYER_SPRINT_MULTIPLIER = 1.35
 export const PLAYER_STAMINA_DRAIN = 0.002
 export const PLAYER_TURN_SPEED = 0.0035
 
-export const SUIT_BASE_SPEED = 0.05
-export const SUIT_MAX_SPEED = 0.12
+export const SUIT_BASE_SPEED = 0.045
+export const SUIT_MAX_SPEED = 0.1
 export const SUIT_ACCEL = 0.00008
-export const SUIT_SPAWN_INTERVAL = 4600
-export const MAX_SUIT_COUNT = 14
+export const SUIT_SPAWN_INTERVAL = 5200
+export const MAX_SUIT_COUNT = 12
 
 export const POLICE_ZONE = {
-  position: { x: MAP_WIDTH - 90, y: CLIFF_LINE - 30 },
-  radius: 50,
+  position: { x: MAP_WIDTH - 140, y: CLIFF_LINE - 50 },
+  radius: 70,
 }
 
-export const DEVICE_SCAN_RADIUS = 80
-export const DEVICE_CAPTURE_RADIUS = 32
+export const DEVICE_SCAN_RADIUS = 120
+export const DEVICE_CAPTURE_RADIUS = 36
 export const STRIKE_RADIUS = 46
 export const DETECTION_RADIUS = 60
